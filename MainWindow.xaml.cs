@@ -110,9 +110,6 @@ namespace AMM.App
             }
         }
 
-
-
-
         private void StartUpdaterAndShutdown(string packagePath)
         {
             string installDirectory = AppContext.BaseDirectory;

@@ -250,6 +250,14 @@ internal sealed class UpdateWindow : Window
             // Удаляем временные распакованные файлы.
             TryDeleteDirectory(stageDirectory);
 
+            // Очищаем старые временные файлы.
+            // Резервные копии rollback-* не затрагиваются.
+            CleanupTemporaryFiles(
+                updatesRoot,
+                packagePath,
+                stageDirectory,
+                AppContext.BaseDirectory);
+
             // Резервную копию сохраняем для возможного восстановления.
             _busy = false;
             await Task.Delay(700);
@@ -489,32 +497,54 @@ internal sealed class UpdateWindow : Window
         }
     }
 
-    private static void CleanupTemporaryFiles(string updatesRoot)
+    private static void CleanupTemporaryFiles(
+    string updatesRoot,
+    string? currentPackagePath,
+    string? currentStageDirectory,
+    string currentUpdaterDirectory)
     {
         try
         {
             if (!Directory.Exists(updatesRoot))
                 return;
 
+            string? protectedPackage = NormalizePath(currentPackagePath);
+            string? protectedStage = NormalizePath(currentStageDirectory);
+            string protectedUpdater = NormalizePath(currentUpdaterDirectory)!;
+
+            // Удаляем старые ZIP-архивы, не затрагивая текущий пакет.
             foreach (string file in Directory.EnumerateFiles(
                          updatesRoot, "update-*.zip", SearchOption.TopDirectoryOnly))
             {
-                TryDeleteFile(file);
+                if (!string.Equals(
+                        NormalizePath(file),
+                        protectedPackage,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    TryDeleteFile(file);
+                }
             }
 
+            // Удаляем старые временные распакованные каталоги.
+            foreach (string directory in Directory.EnumerateDirectories(
+                         updatesRoot, "stage-*", SearchOption.TopDirectoryOnly))
+            {
+                if (!string.Equals(
+                        NormalizePath(directory),
+                        protectedStage,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    TryDeleteDirectory(directory);
+                }
+            }
+
+            // Удаляем старые каталоги обновлятора, кроме текущего.
             foreach (string directory in Directory.EnumerateDirectories(
                          updatesRoot, "Updater-*", SearchOption.TopDirectoryOnly))
             {
-                // Не удаляем папку, из которой сейчас работает обновлятор.
-                string currentDirectory = Path.GetFullPath(AppContext.BaseDirectory)
-                    .TrimEnd(Path.DirectorySeparatorChar);
-
-                string candidate = Path.GetFullPath(directory)
-                    .TrimEnd(Path.DirectorySeparatorChar);
-
                 if (!string.Equals(
-                        currentDirectory,
-                        candidate,
+                        NormalizePath(directory),
+                        protectedUpdater,
                         StringComparison.OrdinalIgnoreCase))
                 {
                     TryDeleteDirectory(directory);
@@ -523,7 +553,16 @@ internal sealed class UpdateWindow : Window
         }
         catch
         {
-            // Ошибки очистки не должны ломать обновление.
+            // Ошибка очистки не должна ломать успешное обновление.
         }
+    }
+
+    private static string? NormalizePath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return null;
+
+        return Path.GetFullPath(path)
+            .TrimEnd(Path.DirectorySeparatorChar);
     }
 }
