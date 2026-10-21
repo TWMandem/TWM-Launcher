@@ -244,9 +244,13 @@ internal sealed class UpdateWindow : Window
                 UseShellExecute = true
             });
 
-            try { File.Delete(packagePath); } catch { }
-            try { if (stageDirectory is not null) Directory.Delete(stageDirectory, recursive: true); } catch { }
-            // Резервная копия намеренно сохраняется для ручного восстановления при необходимости.
+            // Удаляем ZIP-пакет текущего обновления.
+            TryDeleteFile(packagePath);
+
+            // Удаляем временные распакованные файлы.
+            TryDeleteDirectory(stageDirectory);
+
+            // Резервную копию сохраняем для возможного восстановления.
             _busy = false;
             await Task.Delay(700);
             _allowClose = true;
@@ -451,5 +455,75 @@ internal sealed class UpdateWindow : Window
             _progress.Value = Math.Clamp(percent, 0, 100);
             _percentText.Text = indeterminate ? "" : $"{Math.Clamp(percent, 0, 100)}%";
         });
+    }
+
+    private static void TryDeleteFile(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return;
+
+        try
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+        catch
+        {
+            // Очистка не должна отменять успешно установленное обновление.
+        }
+    }
+
+    private static void TryDeleteDirectory(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return;
+
+        try
+        {
+            if (Directory.Exists(path))
+                Directory.Delete(path, recursive: true);
+        }
+        catch
+        {
+            // Папку можно будет попробовать удалить при следующем запуске.
+        }
+    }
+
+    private static void CleanupTemporaryFiles(string updatesRoot)
+    {
+        try
+        {
+            if (!Directory.Exists(updatesRoot))
+                return;
+
+            foreach (string file in Directory.EnumerateFiles(
+                         updatesRoot, "update-*.zip", SearchOption.TopDirectoryOnly))
+            {
+                TryDeleteFile(file);
+            }
+
+            foreach (string directory in Directory.EnumerateDirectories(
+                         updatesRoot, "Updater-*", SearchOption.TopDirectoryOnly))
+            {
+                // Не удаляем папку, из которой сейчас работает обновлятор.
+                string currentDirectory = Path.GetFullPath(AppContext.BaseDirectory)
+                    .TrimEnd(Path.DirectorySeparatorChar);
+
+                string candidate = Path.GetFullPath(directory)
+                    .TrimEnd(Path.DirectorySeparatorChar);
+
+                if (!string.Equals(
+                        currentDirectory,
+                        candidate,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    TryDeleteDirectory(directory);
+                }
+            }
+        }
+        catch
+        {
+            // Ошибки очистки не должны ломать обновление.
+        }
     }
 }
