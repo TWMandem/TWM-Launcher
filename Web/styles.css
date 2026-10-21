@@ -405,3 +405,35 @@ body { height:100%; min-height:0; margin:0; overflow:hidden; }
 .build-import-folder-button{padding:11px 14px;border:1px solid #59616c;border-radius:8px;background:#171a1f;color:#e0e3e8;font:800 10px 'Segoe UI',sans-serif;letter-spacing:.4px;cursor:pointer}
 .build-import-folder-button:hover{border-color:#a4abb4;color:#fff}
 @media(max-width:560px){.build-card-head-meta{justify-content:flex-start}}
+
+
+/* Launcher updater — same graphite / silver visual language as the main UI. */
+[hidden]{display:none!important}
+.launcher-update-overlay{position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:40px 24px;background:radial-gradient(ellipse at 50% 34%,#242a36 0%,#11141b 42%,#090a0e 100%);color:#eef1f6}
+.launcher-update-overlay:before{content:"";position:absolute;inset:18px;border:1px solid #ffffff0b;pointer-events:none}
+.update-orbit{position:relative;width:86px;height:86px;margin-bottom:30px;border:1px solid #707b8b55;border-radius:50%;display:grid;place-items:center;box-shadow:0 0 60px #a7b7d00b,inset 0 0 30px #a7b7d008}
+.update-orbit span{width:48px;height:48px;border:2px solid #4d5665;border-top-color:#d6dce5;border-right-color:#aab4c3;border-radius:50%;animation:twmUpdateSpin 1.25s linear infinite}
+.update-orbit i,.update-orbit b{position:absolute;width:6px;height:6px;border-radius:50%;background:#e5eaf2;box-shadow:0 0 12px #c9d2e8aa}
+.update-orbit i{top:10px;right:15px}.update-orbit b{bottom:15px;left:11px;opacity:.45}
+.update-eyebrow{font-size:10px;font-weight:800;letter-spacing:3px;color:#9ba5b4;margin-bottom:12px}
+.launcher-update-overlay h1{font-size:clamp(23px,3vw,34px);letter-spacing:-.7px;font-weight:700;margin:0 0 12px}
+.launcher-update-overlay p{max-width:450px;margin:0;color:#a9b1bf;font-size:13px;line-height:1.7}
+.update-progress-track{width:min(420px,82vw);height:4px;margin-top:32px;border-radius:99px;background:#343a46;overflow:hidden}
+.update-progress-bar{height:100%;width:0%;border-radius:99px;background:linear-gradient(90deg,#7d8796,#e3e8ef);box-shadow:0 0 18px #c6d0df40;transition:width .16s ease}
+.update-progress-meta{display:flex;justify-content:space-between;width:min(420px,82vw);margin-top:10px;font-size:9px;letter-spacing:1.4px;color:#7f8998;font-weight:800}
+.update-progress-meta strong{color:#dce2eb;font-size:10px}
+.update-version-line{margin-top:38px;color:#687282;font-size:9px;letter-spacing:1.8px}
+.update-continue{margin-top:24px;padding:12px 18px;border:1px solid #5d6878;border-radius:7px;background:#202631;color:#e9edf4;font-size:10px;font-weight:800;letter-spacing:1px;cursor:pointer}
+.update-continue:hover{background:#2b3340;border-color:#9ba6b6}
+.launcher-version-panel{display:flex;align-items:center;gap:14px;margin:16px 0 20px;padding:15px 17px;border:1px solid #343a45;border-radius:10px;background:linear-gradient(110deg,#181c23,#12151b);min-width:0}
+.launcher-version-mark{width:34px;height:34px;flex:0 0 34px;display:grid;place-items:center;border-radius:8px;background:#252b35;border:1px solid #434b59}
+.version-mark-dot{width:9px;height:9px;border-radius:50%;background:#b9c3d0;box-shadow:0 0 12px #c0ccdf55}
+.launcher-version-copy{flex:1;min-width:0}
+.launcher-version-copy small{display:block;color:#828d9d;font-size:9px;letter-spacing:1.4px;font-weight:800;margin-bottom:5px}
+.launcher-version-copy strong{display:block;color:#e4e8ef;font-size:12px;font-weight:700}
+.launcher-version-copy p{font-size:10px;color:#8d97a6;margin:4px 0 0;line-height:1.4}
+.launcher-check-button{display:flex;align-items:center;gap:8px;flex:0 0 auto;padding:11px 13px;border:1px solid #4b5462;border-radius:7px;background:#20252e;color:#d9dfe8;font-size:9px;font-weight:800;letter-spacing:.5px;cursor:pointer}
+.launcher-check-button:hover{border-color:#a4adbb;background:#2a303a;color:#fff}
+.launcher-check-button span{font-size:15px}
+@keyframes twmUpdateSpin{to{transform:rotate(360deg)}}
+@media(max-width:680px){.launcher-version-panel{align-items:flex-start;flex-wrap:wrap}.launcher-version-copy{min-width:calc(100% - 60px)}.launcher-check-button{margin-left:48px}}

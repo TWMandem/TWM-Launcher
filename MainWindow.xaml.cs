@@ -37,6 +37,181 @@ namespace AMM.App
             try { DragMove(); } catch (InvalidOperationException) { }
         }
 
+
+
+        private bool _launcherUpdateCheckInProgress;
+
+        private async Task CheckForLauncherUpdatesAsync(bool manual = false)
+        {
+            if (_launcherUpdateCheckInProgress)
+                return;
+
+            _launcherUpdateCheckInProgress = true;
+            PostLauncherUpdateState("checking", "Проверяем обновления",
+                "Подключаемся к серверу обновлений TWM.", 0);
+
+            try
+            {
+                var updateService = new UpdateService();
+                var result = await updateService.CheckForUpdatesAsync();
+
+                if (!result.UpdateAvailable || result.Manifest is null)
+                {
+                    PostLauncherUpdateState("upToDate", "У вас актуальная версия",
+                        $"Установлена версия {result.CurrentVersion}. Обновлений нет.", 100,
+                        result.CurrentVersion.ToString(), result.LatestVersion.ToString());
+
+                    if (manual)
+                        ShowNotificationMessage(
+                            $"Установлена актуальная версия {result.CurrentVersion}.",
+                            "TWM Launcher", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                PostLauncherUpdateState("downloading", "Найдено обновление",
+                    $"Версия {result.LatestVersion}. Скачиваем пакет и проверяем его целостность…",
+                    0, result.CurrentVersion.ToString(), result.LatestVersion.ToString());
+
+                var progress = new Progress<UpdateService.DownloadProgress>(p =>
+                {
+                    var percent = (int)Math.Round(p.Percent);
+                    var received = FormatUpdateBytes(p.BytesReceived);
+                    var total = FormatUpdateBytes(p.TotalBytes);
+                    PostLauncherUpdateState("downloading", "Загружаем обновление",
+                        $"{received} из {total}", percent,
+                        result.CurrentVersion.ToString(), result.LatestVersion.ToString());
+                });
+
+                var packagePath = await updateService.DownloadAndVerifyPackageAsync(
+                    result.Manifest, progress);
+
+                PostLauncherUpdateState("installing", "Подготавливаем установку",
+                    $"Пакет версии {result.LatestVersion} проверен. Запускаем безопасную установку…",
+                    100, result.CurrentVersion.ToString(), result.LatestVersion.ToString());
+
+                StartUpdaterAndShutdown(packagePath);
+                return;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Ошибка обновления: {ex}");
+                PostLauncherUpdateState("error", "Не удалось обновить лаунчер",
+                    ex.Message + " Лаунчер продолжит работу с текущей версией.", 0);
+                if (manual)
+                {
+                    ShowNotificationMessage(
+                        "Не удалось проверить или скачать обновление.\n\n" + ex.Message,
+                        "Ошибка обновления", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+            }
+            finally
+            {
+                _launcherUpdateCheckInProgress = false;
+            }
+        }
+
+
+        private static void StartUpdaterAndShutdown(string packagePath)
+        {
+            var updaterSource = Path.Combine(AppContext.BaseDirectory, "TWM Launcher.Updater.exe");
+            if (!File.Exists(updaterSource))
+            {
+                throw new FileNotFoundException(
+                    "Не найден TWM Launcher.Updater.exe. Проверь сборку и публикацию обновлятора.",
+                    updaterSource);
+            }
+
+            var updatesDirectory = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "TWM Launcher", "Updates");
+            Directory.CreateDirectory(updatesDirectory);
+
+            // Запускаем копию из LocalAppData, чтобы updater мог заменить даже свой файл
+            // в каталоге установки, не пытаясь перезаписать исполняемый файл текущего процесса.
+            var updaterCopy = Path.Combine(
+                updatesDirectory, $"TWM Launcher.Updater-{Guid.NewGuid():N}.exe");
+            File.Copy(updaterSource, updaterCopy, overwrite: false);
+
+            var launcherExe = Environment.ProcessPath;
+            if (string.IsNullOrWhiteSpace(launcherExe))
+                launcherExe = Process.GetCurrentProcess().MainModule?.FileName;
+            if (string.IsNullOrWhiteSpace(launcherExe))
+                throw new InvalidOperationException("Не удалось определить путь к TWM Launcher.exe.");
+
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = updaterCopy,
+                WorkingDirectory = updatesDirectory,
+                UseShellExecute = false
+            };
+            startInfo.ArgumentList.Add(packagePath);
+            startInfo.ArgumentList.Add(AppContext.BaseDirectory);
+            startInfo.ArgumentList.Add(Process.GetCurrentProcess().Id.ToString());
+            startInfo.ArgumentList.Add(launcherExe);
+
+            if (Process.Start(startInfo) is null)
+                throw new InvalidOperationException("Не удалось запустить процесс установки обновления.");
+
+            Application.Current.Shutdown();
+        }
+
+        private static string FormatUpdateBytes(long bytes)
+        {
+            string[] units = { "Б", "КБ", "МБ", "ГБ" };
+            double size = Math.Max(0, bytes);
+            int unit = 0;
+            while (size >= 1024 && unit < units.Length - 1)
+            {
+                size /= 1024;
+                unit++;
+            }
+            return $"{size:0.0} {units[unit]}";
+        }
+
+        private void PostLauncherUpdateState(
+            string state,
+            string title,
+            string message,
+            int percent,
+            string? currentVersion = null,
+            string? latestVersion = null)
+        {
+            void Send()
+            {
+                try
+                {
+                    if (LauncherWebView.CoreWebView2 is null)
+                        return;
+
+                    var payload = new
+                    {
+                        type = "launcherUpdate",
+                        state,
+                        title,
+                        message,
+                        percent = Math.Clamp(percent, 0, 100),
+                        currentVersion = currentVersion ?? "",
+                        latestVersion = latestVersion ?? ""
+                    };
+
+                    LauncherWebView.CoreWebView2.PostWebMessageAsJson(
+                        JsonSerializer.Serialize(payload));
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        "Не удалось обновить экран обновления: " + ex.Message);
+                }
+            }
+
+            if (Dispatcher.CheckAccess())
+                Send();
+            else
+                Dispatcher.BeginInvoke((Action)Send);
+        }
+
+
+
         private void MinimizeWindow_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
 
         private void MaximizeWindow_Click(object sender, RoutedEventArgs e) => ToggleWindowState();
@@ -257,6 +432,7 @@ namespace AMM.App
 
             UpdateServerSelectionVisuals();
             await InitializeWebViewAsync();
+            await CheckForLauncherUpdatesAsync();
         }
 
         private async Task InitializeWebViewAsync()
@@ -275,7 +451,24 @@ namespace AMM.App
                 LauncherWebView.CoreWebView2.Settings.IsStatusBarEnabled = false;
                 LauncherWebView.AllowExternalDrop = false;
                 LauncherWebView.CoreWebView2.WebMessageReceived += LauncherWebView_WebMessageReceived;
-                LauncherWebView.Source = new Uri(htmlPath);
+
+                var navigationCompleted = new TaskCompletionSource<bool>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                void OnNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs args)
+                {
+                    navigationCompleted.TrySetResult(args.IsSuccess);
+                }
+
+                LauncherWebView.CoreWebView2.NavigationCompleted += OnNavigationCompleted;
+                try
+                {
+                    LauncherWebView.Source = new Uri(htmlPath);
+                    await navigationCompleted.Task.WaitAsync(TimeSpan.FromSeconds(20));
+                }
+                finally
+                {
+                    LauncherWebView.CoreWebView2.NavigationCompleted -= OnNavigationCompleted;
+                }
             }
             catch (Exception ex)
             {
@@ -322,6 +515,9 @@ namespace AMM.App
                 {
                     case "ready":
                         SendWebState();
+                        break;
+                    case "checkLauncherUpdates":
+                        _ = CheckForLauncherUpdatesAsync(manual: true);
                         break;
                     case "getBuilds":
                         SendLocalBuilds();
@@ -426,6 +622,15 @@ namespace AMM.App
             }
         }
 
+        private static string GetLauncherVersionString()
+        {
+            var assembly = Assembly.GetEntryAssembly();
+            var value = assembly?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+                ?? assembly?.GetName().Version?.ToString()
+                ?? "1.0.0";
+            return value.Split('+')[0];
+        }
+
         private void SendWebState()
         {
             if (LauncherWebView.CoreWebView2 == null) return;
@@ -441,7 +646,8 @@ namespace AMM.App
                 running,
                 launching,
                 status = running ? "ИГРА ЗАПУЩЕНА" : launching ? "ЗАПУСК КЛИЕНТА" : "КЛИЕНТ ГОТОВ",
-                playLabel = running ? "ИГРА УЖЕ ЗАПУЩЕНА" : launching ? "ЗАПУСК…" : "ЗАПУСТИТЬ ИГРУ"
+                playLabel = running ? "ИГРА УЖЕ ЗАПУЩЕНА" : launching ? "ЗАПУСК…" : "ЗАПУСТИТЬ ИГРУ",
+                launcherVersion = GetLauncherVersionString()
             };
             LauncherWebView.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(state));
         }

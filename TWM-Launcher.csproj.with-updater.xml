@@ -1,0 +1,57 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <ApplicationIcon>Resources\twm-launcher.ico</ApplicationIcon>
+    <AssemblyName>TWM Launcher</AssemblyName>
+    <RootNamespace>AMM.App</RootNamespace>
+    <Version>1.0.0</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+    <Product>TWM Launcher</Product>
+    <Description>TWM Launcher for Amazing Online</Description>
+    <Company>TWM</Company>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.0" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.3" />
+    <PackageReference Include="SharpCompress" Version="0.48.0" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Resources\banner.png" />
+    <Resource Include="Resources\icon.png" />
+    <Resource Include="Resources\twm-launcher.ico" />
+    <EmbeddedResource Include="Resources\quick_asi.exe" Condition="Exists('Resources\quick_asi.exe')" />
+    <Content Include="Resources\banner.png;Resources\icon.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Web\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <!-- The updater is a separate executable project. Do not compile its Program.cs into AMM.App. -->
+  <ItemGroup>
+    <Compile Remove="Updater\**\*.cs" />
+  </ItemGroup>
+
+  <!-- Build a self-contained updater next to the launcher for local builds. -->
+  <Target Name="BuildTwmLauncherUpdaterForLocalRun"
+          AfterTargets="Build"
+          Condition="'$(DesignTimeBuild)' != 'true'">
+    <Exec Command="dotnet publish &quot;$(MSBuildProjectDirectory)\Updater\TWM.Launcher.Updater.csproj&quot; -c $(Configuration) -r win-x64 --self-contained true -o &quot;$(TargetDir)&quot;" />
+  </Target>
+
+  <!-- Ensure the updater is present in PublishDir before a release packager builds manifest.json/ZIP. -->
+  <Target Name="PublishTwmLauncherUpdater"
+          AfterTargets="Publish"
+          Condition="'$(DesignTimeBuild)' != 'true'">
+    <Exec Command="dotnet publish &quot;$(MSBuildProjectDirectory)\Updater\TWM.Launcher.Updater.csproj&quot; -c $(Configuration) -r win-x64 --self-contained true -o &quot;$(PublishDir)&quot;" />
+  </Target>
+</Project>

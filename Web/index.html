@@ -5,6 +5,16 @@
 <title>TWM Launcher</title><link rel="stylesheet" href="styles.css">
 </head>
 <body>
+<div class="launcher-update-overlay" id="launcherUpdateOverlay" role="status" aria-live="polite">
+  <div class="update-orbit" aria-hidden="true"><span></span><i></i><b></b></div>
+  <div class="update-eyebrow">TWM / SYSTEM UPDATE</div>
+  <h1 id="launcherUpdateTitle">Проверяем обновления</h1>
+  <p id="launcherUpdateMessage">Подключаемся к серверу обновлений TWM.</p>
+  <div class="update-progress-track"><div id="launcherUpdateProgressBar" class="update-progress-bar"></div></div>
+  <div class="update-progress-meta"><span id="launcherUpdateProgressLabel">ПОДГОТОВКА</span><strong id="launcherUpdatePercent">—</strong></div>
+  <div id="launcherUpdateVersions" class="update-version-line">TWM LAUNCHER · SECURE UPDATE</div>
+  <button id="launcherUpdateContinue" type="button" class="update-continue" hidden>ОТКРЫТЬ ЛАУНЧЕР <span>↗</span></button>
+</div>
 <div class="app-shell">
   <aside class="sidebar">
     <div class="brand"><img class="brand-mark" src="../Resources/icon.png" alt="TWM"><div class="brand-copy"><strong>TWM</strong><span>GAME HUB</span></div></div>
@@ -36,6 +46,11 @@
       <div class="nickname-wrap"><label for="nickname">ИГРОВОЙ НИКНЕЙМ</label><div class="nickname-input"><span>♙</span><input id="nickname" maxlength="24" value="Player" placeholder="Введите никнейм"></div><div class="nickname-profile-row"><div id="savedNicknames" class="nickname-cards" role="listbox" aria-label="Сохранённые никнеймы" title="Никнеймы для выбранного сервера"><div class="nickname-cards-empty">Пока нет сохранённых никнеймов</div></div><button type="button" id="saveNicknameButton" class="nickname-save" title="Сохранить никнейм для этого сервера">СОХРАНИТЬ</button><button type="button" id="deleteNicknameButton" class="nickname-delete" title="Удалить выбранный сохранённый никнейм" aria-label="Удалить никнейм"><span class="nickname-delete-glyph" aria-hidden="true">×</span></button></div><small id="nicknameProfileStatus">Никнеймы сохраняются отдельно для каждого сервера · до 24 символов</small></div>
       <div class="selected-world"><label>ТЕКУЩИЙ СЕРВЕР</label><div class="world-name"><i id="serverDot"></i><strong id="selectedServer">NIGHT</strong></div><span id="selectedAddress">80.66.82.143:7777</span></div>
       <button class="play-button" id="playButton" data-action="launch"><span class="play-symbol">▶</span><span><b id="playLabel">ЗАПУСТИТЬ ИГРУ</b><small>ЗАПУСК КЛИЕНТА</small></span><span class="play-arrow">↗</span></button>
+    </section>
+    <section class="launcher-version-panel" aria-label="Обновление лаунчера">
+      <div class="launcher-version-mark"><span class="version-mark-dot"></span></div>
+      <div class="launcher-version-copy"><small>TWM LAUNCHER</small><strong>Установленная версия <span id="launcherInstalledVersion">проверяем…</span></strong><p id="launcherVersionStatus">Автоматическая проверка обновлений при запуске</p></div>
+      <button type="button" class="launcher-check-button" data-action="checkLauncherUpdates"><span>↻</span> ПРОВЕРИТЬ ОБНОВЛЕНИЯ</button>
     </section>
     <section class="section-heading" id="serverSection"><div><span class="eyebrow">НАЙДИ СВОЙ МИР</span><h3>Игровые серверы</h3></div></section>
     <section class="server-grid" id="serverGrid"></section>
