@@ -149,6 +149,7 @@ internal sealed class UpdateWindow : Window
         string? packagePath = null;
         string? installDirectory = null;
         string? launcherPath = null;
+        bool launcherStopped = false;
         var changed = new List<(string Relative, bool HadOriginal)>();
         var originalFiles = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
 
@@ -183,6 +184,7 @@ internal sealed class UpdateWindow : Window
 
             SetStatus("Ожидаем закрытия лаунчера", "Пакет проверен. Завершаем старую версию перед заменой файлов…", 60, true);
             await WaitForLauncherExitAsync(launcherPid);
+            launcherStopped = true;
 
             SetStatus("Создаём резервную копию", "Сохраняем текущие файлы, которые будут заменены…", 62, false);
             for (var i = 0; i < files.Count; i++)
@@ -218,9 +220,12 @@ internal sealed class UpdateWindow : Window
                 var temporaryTarget = target + ".twm-update-" + Guid.NewGuid().ToString("N") + ".tmp";
                 try
                 {
+                    // Сначала регистрируем файл для возможного отката.
+                    changed.Add((relative, originalFiles[relative]));
+
+                    // Создаём временный файл и заменяем целевой.
                     File.Copy(source, temporaryTarget, overwrite: false);
                     File.Move(temporaryTarget, target, overwrite: true);
-                    changed.Add((relative, originalFiles[relative]));
                 }
                 finally
                 {
@@ -271,7 +276,9 @@ internal sealed class UpdateWindow : Window
             _busy = false;
 
             // If the launcher was already closed, try to reopen the current (rolled-back, if needed) version.
-            if (launcherPath is not null && File.Exists(launcherPath))
+            if (launcherStopped &&
+            launcherPath is not null &&
+            File.Exists(launcherPath))
             {
                 try
                 {

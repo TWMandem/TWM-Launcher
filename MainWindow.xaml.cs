@@ -111,49 +111,133 @@ namespace AMM.App
         }
 
 
-        private static void StartUpdaterAndShutdown(string packagePath)
+
+
+        private void StartUpdaterAndShutdown(string packagePath)
         {
-            var updaterSource = Path.Combine(AppContext.BaseDirectory, "TWM Launcher.Updater.exe");
-            if (!File.Exists(updaterSource))
-            {
+            string installDirectory = AppContext.BaseDirectory;
+
+            string launcherPath = Environment.ProcessPath
+                ?? System.Diagnostics.Process.GetCurrentProcess()
+                    .MainModule?.FileName
+                ?? throw new InvalidOperationException(
+                    "Не удалось определить путь к лаунчеру.");
+
+            string installedUpdaterPath = Path.Combine(
+                installDirectory,
+                "TWM Launcher.Updater.exe");
+
+            if (!File.Exists(packagePath))
                 throw new FileNotFoundException(
-                    "Не найден TWM Launcher.Updater.exe. Проверь сборку и публикацию обновлятора.",
-                    updaterSource);
-            }
+                    "Файл обновления не найден.",
+                    packagePath);
 
-            var updatesDirectory = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "TWM Launcher", "Updates");
-            Directory.CreateDirectory(updatesDirectory);
+            if (!File.Exists(installedUpdaterPath))
+                throw new FileNotFoundException(
+                    "Не найден файл программы обновления. " +
+                    "Убедитесь, что TWM Launcher.Updater.exe " +
+                    "находится в папке лаунчера.",
+                    installedUpdaterPath);
 
-            // Запускаем копию из LocalAppData, чтобы updater мог заменить даже свой файл
-            // в каталоге установки, не пытаясь перезаписать исполняемый файл текущего процесса.
-            var updaterCopy = Path.Combine(
-                updatesDirectory, $"TWM Launcher.Updater-{Guid.NewGuid():N}.exe");
-            File.Copy(updaterSource, updaterCopy, overwrite: false);
+            // Создаём отдельную временную папку для обновлятора.
+            string updatesDirectory = Path.Combine(
+                Environment.GetFolderPath(
+                    Environment.SpecialFolder.LocalApplicationData),
+                "TWM Launcher",
+                "Updates");
 
-            var launcherExe = Environment.ProcessPath;
-            if (string.IsNullOrWhiteSpace(launcherExe))
-                launcherExe = Process.GetCurrentProcess().MainModule?.FileName;
-            if (string.IsNullOrWhiteSpace(launcherExe))
-                throw new InvalidOperationException("Не удалось определить путь к TWM Launcher.exe.");
+            string updaterTempDirectory = Path.Combine(
+                updatesDirectory,
+                "Updater-" + Guid.NewGuid().ToString("N"));
 
-            var startInfo = new ProcessStartInfo
+            Directory.CreateDirectory(updaterTempDirectory);
+
+            string temporaryUpdaterPath = Path.Combine(
+                updaterTempDirectory,
+                "TWM Launcher.Updater.exe");
+
+            try
             {
-                FileName = updaterCopy,
-                WorkingDirectory = updatesDirectory,
-                UseShellExecute = false
-            };
-            startInfo.ArgumentList.Add(packagePath);
-            startInfo.ArgumentList.Add(AppContext.BaseDirectory);
-            startInfo.ArgumentList.Add(Process.GetCurrentProcess().Id.ToString());
-            startInfo.ArgumentList.Add(launcherExe);
+                // Копируем обновлятор, чтобы он не запускался
+                // непосредственно из папки установки.
+                File.Copy(
+                    installedUpdaterPath,
+                    temporaryUpdaterPath,
+                    overwrite: false);
 
-            if (Process.Start(startInfo) is null)
-                throw new InvalidOperationException("Не удалось запустить процесс установки обновления.");
+                int launcherPid =
+                    System.Diagnostics.Process.GetCurrentProcess().Id;
 
-            Application.Current.Shutdown();
+                var startInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = temporaryUpdaterPath,
+                    WorkingDirectory = installDirectory,
+                    UseShellExecute = false
+                };
+
+                // 1. Путь к ZIP-пакету.
+                startInfo.ArgumentList.Add(packagePath);
+
+                // 2. Папка установки лаунчера.
+                startInfo.ArgumentList.Add(installDirectory);
+
+                // 3. PID текущего процесса.
+                startInfo.ArgumentList.Add(
+                    launcherPid.ToString(
+                        System.Globalization.CultureInfo.InvariantCulture));
+
+                // 4. Полный путь к EXE лаунчера.
+                startInfo.ArgumentList.Add(launcherPath);
+
+                var updaterProcess =
+                    System.Diagnostics.Process.Start(startInfo);
+
+                if (updaterProcess is null)
+                    throw new InvalidOperationException(
+                        "Не удалось запустить программу обновления.");
+
+                // Обновлятор самостоятельно дождётся завершения лаунчера.
+                Application.Current.Shutdown();
+            }
+            catch
+            {
+                // Удаляем временную папку, если запуск не состоялся.
+                // Если процесс уже стартовал, не трогаем его файлы.
+                if (!System.Diagnostics.Process
+                        .GetProcesses()
+                        .Any(p =>
+                        {
+                            try
+                            {
+                                return p.Id != 0 &&
+                                    string.Equals(
+                                        p.MainModule?.FileName,
+                                        temporaryUpdaterPath,
+                                        StringComparison.OrdinalIgnoreCase);
+                            }
+                            catch
+                            {
+                                return false;
+                            }
+                        }))
+                {
+                    try
+                    {
+                        Directory.Delete(
+                            updaterTempDirectory,
+                            recursive: true);
+                    }
+                    catch
+                    {
+                        // Очистка временных файлов необязательна
+                        // для продолжения работы лаунчера.
+                    }
+                }
+
+                throw;
+            }
         }
+
 
         private static string FormatUpdateBytes(long bytes)
         {
