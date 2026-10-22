@@ -522,8 +522,20 @@ internal sealed class UpdateWindow : Window
                     Get-ChildItem -LiteralPath $root -Directory -Filter 'Updater-*' -ErrorAction SilentlyContinue |
                         Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
-                    Get-ChildItem -LiteralPath $root -File -Filter 'TWM Launcher Updater-*.exe' -ErrorAction SilentlyContinue |
+                    Get-ChildItem -LiteralPath $root -File -Filter 'TWM Launcher.Updater-*.exe' -ErrorAction SilentlyContinue |
                         Remove-Item -Force -ErrorAction SilentlyContinue
+
+                    # Оставляем одну самую новую резервную копию.
+                    $backups = @(
+                        Get-ChildItem -LiteralPath $root -Directory -Filter 'rollback-*' -ErrorAction SilentlyContinue |
+                            Sort-Object LastWriteTime -Descending
+                    )
+
+                    if ($backups.Count -gt 1) {{
+                        $backups | Select-Object -Skip 1 | ForEach-Object {{
+                            Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+                        }}
+                    }}
                 }}
 
                 Start-Sleep -Seconds 2
