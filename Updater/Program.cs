@@ -488,63 +488,111 @@ internal sealed class UpdateWindow : Window
     }
 
 
+    
     private static void ScheduleCleanupAfterExit(string updatesRoot, int updaterPid)
     {
         try
         {
             string root = Path.GetFullPath(updatesRoot);
-
-            // Экранируем путь для строкового литерала PowerShell.
             string escapedRoot = root.Replace("'", "''");
-
+    
             string script = $@"
-            $targetPid = {updaterPid}
-            $root = '{escapedRoot}'
-
-            # Ждём завершения процесса обновлятора.
-            while (Get-Process -Id $targetPid -ErrorAction SilentlyContinue) {{
-                Start-Sleep -Milliseconds 500
-            }}
-
-            Start-Sleep -Milliseconds 700
-
-            # Несколько попыток на случай временной блокировки файлов.
-            for ($attempt = 0; $attempt -lt 8; $attempt++) {{
-
-                if (Test-Path -LiteralPath $root) {{
-
-                    Get-ChildItem -LiteralPath $root -File -Filter 'update-*.zip' -ErrorAction SilentlyContinue |
-                        Remove-Item -Force -ErrorAction SilentlyContinue
-
-                    Get-ChildItem -LiteralPath $root -Directory -Filter 'stage-*' -ErrorAction SilentlyContinue |
-                        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-
-                    Get-ChildItem -LiteralPath $root -Directory -Filter 'Updater-*' -ErrorAction SilentlyContinue |
-                        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-
-                    Get-ChildItem -LiteralPath $root -File -Filter 'TWM Launcher.Updater-*.exe' -ErrorAction SilentlyContinue |
-                        Remove-Item -Force -ErrorAction SilentlyContinue
-
-                    # Оставляем одну самую новую резервную копию.
-                    $backups = @(
-                        Get-ChildItem -LiteralPath $root -Directory -Filter 'rollback-*' -ErrorAction SilentlyContinue |
-                            Sort-Object LastWriteTime -Descending
-                    )
-
-                    if ($backups.Count -gt 1) {{
-                        $backups | Select-Object -Skip 1 | ForEach-Object {{
-                            Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
-                        }}
-                    }}
+    $targetPid = {updaterPid}
+    $root = '{escapedRoot}'
+    $log = Join-Path $root 'cleanup.log'
+    
+    function Write-CleanupLog([string]$message) {{
+        try {{
+            Add-Content -LiteralPath $log -Value (
+                (Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + ' ' + $message
+            )
+        }} catch {{}}
+    }}
+    
+    Write-CleanupLog 'Очистка запущена.'
+    
+    # Ждём завершения процесса обновлятора.
+    while (Get-Process -Id $targetPid -ErrorAction SilentlyContinue) {{
+        Start-Sleep -Milliseconds 500
+    }}
+    
+    Start-Sleep -Seconds 2
+    
+    if (-not (Test-Path -LiteralPath $root)) {{
+        exit
+    }}
+    
+    # Повторяем попытки очистки временных файлов.
+    for ($attempt = 1; $attempt -le 8; $attempt++) {{
+    
+        Write-CleanupLog ""Попытка $attempt.""
+    
+        Get-ChildItem -LiteralPath $root -File -Filter 'update-*.zip' -ErrorAction SilentlyContinue |
+            ForEach-Object {{
+                try {{
+                    Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop
+                    Write-CleanupLog ""Удалён ZIP: $($_.Name)""
+                }} catch {{
+                    Write-CleanupLog ""Не удалось удалить ZIP $($_.Name): $($_.Exception.Message)""
                 }}
-
-                Start-Sleep -Seconds 2
             }}
-            ";
-
+    
+        Get-ChildItem -LiteralPath $root -Directory -Filter 'stage-*' -ErrorAction SilentlyContinue |
+            ForEach-Object {{
+                try {{
+                    Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction Stop
+                    Write-CleanupLog ""Удалён каталог: $($_.Name)""
+                }} catch {{
+                    Write-CleanupLog ""Не удалось удалить каталог $($_.Name): $($_.Exception.Message)""
+                }}
+            }}
+    
+        Get-ChildItem -LiteralPath $root -Directory -Filter 'Updater-*' -ErrorAction SilentlyContinue |
+            ForEach-Object {{
+                try {{
+                    Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction Stop
+                    Write-CleanupLog ""Удалён каталог: $($_.Name)""
+                }} catch {{
+                    Write-CleanupLog ""Не удалось удалить каталог $($_.Name): $($_.Exception.Message)""
+                }}
+            }}
+    
+        Get-ChildItem -LiteralPath $root -File -Filter 'TWM Launcher.Updater-*.exe' -ErrorAction SilentlyContinue |
+            ForEach-Object {{
+                try {{
+                    Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop
+                    Write-CleanupLog ""Удалён EXE: $($_.Name)""
+                }} catch {{
+                    Write-CleanupLog ""Не удалось удалить EXE $($_.Name): $($_.Exception.Message)""
+                }}
+            }}
+    
+        # Оставляем самую новую резервную копию.
+        $backups = @(
+            Get-ChildItem -LiteralPath $root -Directory -Filter 'rollback-*' -ErrorAction SilentlyContinue |
+                Sort-Object LastWriteTime -Descending
+        )
+    
+        if ($backups.Count -gt 1) {{
+            $backups | Select-Object -Skip 1 | ForEach-Object {{
+                try {{
+                    Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction Stop
+                    Write-CleanupLog ""Удалена старая резервная копия: $($_.Name)""
+                }} catch {{
+                    Write-CleanupLog ""Не удалось удалить резервную копию $($_.Name): $($_.Exception.Message)""
+                }}
+            }}
+        }}
+    
+        Start-Sleep -Seconds 2
+    }}
+    
+    Write-CleanupLog 'Очистка завершена.'
+    ";
+    
             string encodedScript = Convert.ToBase64String(
                 System.Text.Encoding.Unicode.GetBytes(script));
-
+    
             var startInfo = new ProcessStartInfo
             {
                 FileName = "powershell.exe",
@@ -554,12 +602,12 @@ internal sealed class UpdateWindow : Window
                 UseShellExecute = false,
                 CreateNoWindow = true
             };
-
+    
             Process.Start(startInfo);
         }
         catch
         {
-            // Ошибка запуска очистки не отменяет установленное обновление.
+            // Очистка не должна отменять успешно установленное обновление.
         }
     }
 
