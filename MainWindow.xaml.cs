@@ -347,9 +347,12 @@ namespace AMM.App
             };
 
         private string _selectedServer = "NIGHT";
+        private readonly string? _updateConfirmationPath;
 
-        public MainWindow()
+        public MainWindow(string? updateConfirmationPath = null)
         {
+            _updateConfirmationPath = updateConfirmationPath;
+
             InitializeComponent();
 
             // Server browser is now a dedicated screen instead of a section on the home page.
@@ -467,6 +470,7 @@ namespace AMM.App
         // UI ANIMATIONS
         // =========================================================
 
+
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
             if (_animationsInitialized)
@@ -475,7 +479,6 @@ namespace AMM.App
             _animationsInitialized = true;
             RefreshGameStatus();
 
-            // One coordinated entrance animation; XAML no longer runs a competing root storyboard.
             Root.Opacity = 0;
             if (Root.RenderTransform is not TranslateTransform rootTranslate)
             {
@@ -495,7 +498,6 @@ namespace AMM.App
                     EasingFunction = easing
                 });
 
-            // Stagger the main surfaces for a more deliberate, premium feel.
             AnimateEntrance(TopBar, 55);
             AnimateEntrance(HeroCard, 110);
             AnimateEntrance(ServersSectionHeader, 185);
@@ -503,7 +505,6 @@ namespace AMM.App
             AnimateEntrance(QuickLinksPanel, 320);
             AnimateEntrance(ActiveServerPanel, 365);
 
-            // Small, restrained hover motion for interactive controls.
             foreach (Button button in FindVisualChildren<Button>(this))
             {
                 button.RenderTransformOrigin = new System.Windows.Point(0.5, 0.5);
@@ -512,54 +513,112 @@ namespace AMM.App
             }
 
             UpdateServerSelectionVisuals();
-            await InitializeWebViewAsync();
+
+            bool webViewReady = await InitializeWebViewAsync();
+
+            if (webViewReady)
+                WriteUpdateConfirmation();
+
             await CheckForLauncherUpdatesAsync();
         }
 
-        private async Task InitializeWebViewAsync()
+        private async Task<bool> InitializeWebViewAsync()
         {
             try
             {
                 var webFolder = Path.Combine(AppContext.BaseDirectory, "Web");
                 var htmlPath = Path.Combine(webFolder, "index.html");
+
                 if (!File.Exists(htmlPath))
-                    throw new FileNotFoundException("Не найдены файлы интерфейса WebView2.", htmlPath);
+                    throw new FileNotFoundException(
+                        "Не найдены файлы интерфейса WebView2.", htmlPath);
 
                 await LauncherWebView.EnsureCoreWebView2Async();
+
                 LauncherWebView.CoreWebView2.Settings.AreDevToolsEnabled = false;
                 LauncherWebView.CoreWebView2.Settings.AreBrowserAcceleratorKeysEnabled = false;
                 LauncherWebView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
                 LauncherWebView.CoreWebView2.Settings.IsStatusBarEnabled = false;
                 LauncherWebView.AllowExternalDrop = false;
-                LauncherWebView.CoreWebView2.WebMessageReceived += LauncherWebView_WebMessageReceived;
+                LauncherWebView.CoreWebView2.WebMessageReceived +=
+                    LauncherWebView_WebMessageReceived;
 
                 var navigationCompleted = new TaskCompletionSource<bool>(
                     TaskCreationOptions.RunContinuationsAsynchronously);
-                void OnNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs args)
+
+                void OnNavigationCompleted(
+                    object? sender,
+                    CoreWebView2NavigationCompletedEventArgs args)
                 {
                     navigationCompleted.TrySetResult(args.IsSuccess);
                 }
 
                 LauncherWebView.CoreWebView2.NavigationCompleted += OnNavigationCompleted;
+
                 try
                 {
                     LauncherWebView.Source = new Uri(htmlPath);
-                    await navigationCompleted.Task.WaitAsync(TimeSpan.FromSeconds(20));
+
+                    bool succeeded = await navigationCompleted.Task.WaitAsync(
+                        TimeSpan.FromSeconds(20));
+
+                    if (!succeeded)
+                        throw new InvalidOperationException(
+                            "WebView2 не смог загрузить основной интерфейс.");
                 }
                 finally
                 {
-                    LauncherWebView.CoreWebView2.NavigationCompleted -= OnNavigationCompleted;
+                    LauncherWebView.CoreWebView2.NavigationCompleted -=
+                        OnNavigationCompleted;
                 }
+
+                return true;
             }
             catch (Exception ex)
             {
                 LauncherWebView.Visibility = Visibility.Collapsed;
                 Root.Visibility = Visibility.Visible;
+
                 SilverMessageBox.Show(
-                    "Не удалось загрузить новый интерфейс TWM Launcher. Будет открыт резервный интерфейс.\n\n" + ex.Message,
-                    "TWM Launcher", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    "Не удалось загрузить новый интерфейс TWM Launcher. " +
+                    "Будет открыт резервный интерфейс.\n\n" + ex.Message,
+                    "TWM Launcher",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+
+                return false;
             }
         }
+
+        private void WriteUpdateConfirmation()
+        {
+            if (string.IsNullOrWhiteSpace(_updateConfirmationPath))
+                return;
+
+            try
+            {
+                string? directory = Path.GetDirectoryName(_updateConfirmationPath);
+                if (string.IsNullOrWhiteSpace(directory))
+                    return;
+
+                Directory.CreateDirectory(directory);
+
+                using var stream = new FileStream(
+                    _updateConfirmationPath,
+                    FileMode.CreateNew,
+                    FileAccess.Write,
+                    FileShare.Read);
+
+                using var writer = new StreamWriter(stream);
+                writer.WriteLine(DateTime.UtcNow.ToString("O"));
+            }
+            catch
+            {
+                // If confirmation cannot be written, the updater will time out
+                // and preserve the rollback backup.
+            }
+        }
+
 
         private string _selectedSkinDffPath = string.Empty;
         private string _selectedSkinTxdPath = string.Empty;

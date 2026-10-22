@@ -1,4 +1,6 @@
+
 using System;
+using System.IO;
 using System.Threading;
 using System.Windows;
 
@@ -19,8 +21,6 @@ public partial class App : Application
         }
         catch (Exception)
         {
-            // If the OS cannot create the mutex, do not prevent the launcher
-            // from opening. MainWindow still guards duplicate launches itself.
             createdNew = true;
         }
 
@@ -36,8 +36,60 @@ public partial class App : Application
         }
 
         base.OnStartup(e);
-        MainWindow = new MainWindow();
+
+        MainWindow = new MainWindow(GetUpdateConfirmationPath(e.Args));
         MainWindow.Show();
+    }
+
+    private static string? GetUpdateConfirmationPath(string[] args)
+    {
+        for (int i = 0; i < args.Length - 1; i++)
+        {
+            if (!string.Equals(
+                    args[i], "--twm-update-confirm",
+                    StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            try
+            {
+                string suppliedPath = Path.GetFullPath(args[i + 1]);
+
+                string updatesRoot = Path.GetFullPath(
+                    Path.Combine(
+                        Environment.GetFolderPath(
+                            Environment.SpecialFolder.LocalApplicationData),
+                        "TWM Launcher",
+                        "Updates"));
+
+                string rootPrefix =
+                    updatesRoot.TrimEnd(
+                        Path.DirectorySeparatorChar,
+                        Path.AltDirectorySeparatorChar)
+                    + Path.DirectorySeparatorChar;
+
+                string fileName = Path.GetFileName(suppliedPath);
+
+                if (suppliedPath.StartsWith(
+                        rootPrefix, StringComparison.OrdinalIgnoreCase)
+                    && fileName.StartsWith(
+                        "confirm-", StringComparison.OrdinalIgnoreCase)
+                    && fileName.EndsWith(
+                        ".ok", StringComparison.OrdinalIgnoreCase))
+                {
+                    return suppliedPath;
+                }
+            }
+            catch
+            {
+                return null;
+            }
+
+            return null;
+        }
+
+        return null;
     }
 
     protected override void OnExit(ExitEventArgs e)
@@ -48,7 +100,7 @@ public partial class App : Application
         }
         catch (ApplicationException)
         {
-            // The mutex may not have been acquired if startup was interrupted.
+            // Mutex might not have been acquired if startup was interrupted.
         }
         finally
         {
