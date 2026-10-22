@@ -244,21 +244,11 @@ internal sealed class UpdateWindow : Window
                 UseShellExecute = true
             });
 
-            // Удаляем ZIP-пакет текущего обновления.
-            TryDeleteFile(packagePath);
+            // Запускаем отдельный процесс очистки.
+            // Он дождётся завершения обновлятора и удалит временные файлы.
+            ScheduleCleanupAfterExit(updatesRoot, Environment.ProcessId);
 
-            // Удаляем временные распакованные файлы.
-            TryDeleteDirectory(stageDirectory);
-
-            // Очищаем старые временные файлы.
-            // Резервные копии rollback-* не затрагиваются.
-            CleanupTemporaryFiles(
-                updatesRoot,
-                packagePath,
-                stageDirectory,
-                AppContext.BaseDirectory);
-
-            // Резервную копию сохраняем для возможного восстановления.
+            // Резервную копию rollback-* сохраняем для возможного восстановления.
             _busy = false;
             await Task.Delay(700);
             _allowClose = true;
@@ -497,72 +487,68 @@ internal sealed class UpdateWindow : Window
         }
     }
 
-    private static void CleanupTemporaryFiles(
-    string updatesRoot,
-    string? currentPackagePath,
-    string? currentStageDirectory,
-    string currentUpdaterDirectory)
+
+    private static void ScheduleCleanupAfterExit(string updatesRoot, int updaterPid)
     {
         try
         {
-            if (!Directory.Exists(updatesRoot))
-                return;
+            string root = Path.GetFullPath(updatesRoot);
 
-            string? protectedPackage = NormalizePath(currentPackagePath);
-            string? protectedStage = NormalizePath(currentStageDirectory);
-            string protectedUpdater = NormalizePath(currentUpdaterDirectory)!;
+            // Экранируем путь для строкового литерала PowerShell.
+            string escapedRoot = root.Replace("'", "''");
 
-            // Удаляем старые ZIP-архивы, не затрагивая текущий пакет.
-            foreach (string file in Directory.EnumerateFiles(
-                         updatesRoot, "update-*.zip", SearchOption.TopDirectoryOnly))
+            string script = $@"
+            $targetPid = {updaterPid}
+            $root = '{escapedRoot}'
+
+            # Ждём завершения процесса обновлятора.
+            while (Get-Process -Id $targetPid -ErrorAction SilentlyContinue) {{
+                Start-Sleep -Milliseconds 500
+            }}
+
+            Start-Sleep -Milliseconds 700
+
+            # Несколько попыток на случай временной блокировки файлов.
+            for ($attempt = 0; $attempt -lt 8; $attempt++) {{
+
+                if (Test-Path -LiteralPath $root) {{
+
+                    Get-ChildItem -LiteralPath $root -File -Filter 'update-*.zip' -ErrorAction SilentlyContinue |
+                        Remove-Item -Force -ErrorAction SilentlyContinue
+
+                    Get-ChildItem -LiteralPath $root -Directory -Filter 'stage-*' -ErrorAction SilentlyContinue |
+                        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+                    Get-ChildItem -LiteralPath $root -Directory -Filter 'Updater-*' -ErrorAction SilentlyContinue |
+                        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+                    Get-ChildItem -LiteralPath $root -File -Filter 'TWM Launcher Updater-*.exe' -ErrorAction SilentlyContinue |
+                        Remove-Item -Force -ErrorAction SilentlyContinue
+                }}
+
+                Start-Sleep -Seconds 2
+            }}
+            ";
+
+            string encodedScript = Convert.ToBase64String(
+                System.Text.Encoding.Unicode.GetBytes(script));
+
+            var startInfo = new ProcessStartInfo
             {
-                if (!string.Equals(
-                        NormalizePath(file),
-                        protectedPackage,
-                        StringComparison.OrdinalIgnoreCase))
-                {
-                    TryDeleteFile(file);
-                }
-            }
+                FileName = "powershell.exe",
+                Arguments =
+                    "-NoProfile -NonInteractive -WindowStyle Hidden " +
+                    "-ExecutionPolicy Bypass -EncodedCommand " + encodedScript,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
 
-            // Удаляем старые временные распакованные каталоги.
-            foreach (string directory in Directory.EnumerateDirectories(
-                         updatesRoot, "stage-*", SearchOption.TopDirectoryOnly))
-            {
-                if (!string.Equals(
-                        NormalizePath(directory),
-                        protectedStage,
-                        StringComparison.OrdinalIgnoreCase))
-                {
-                    TryDeleteDirectory(directory);
-                }
-            }
-
-            // Удаляем старые каталоги обновлятора, кроме текущего.
-            foreach (string directory in Directory.EnumerateDirectories(
-                         updatesRoot, "Updater-*", SearchOption.TopDirectoryOnly))
-            {
-                if (!string.Equals(
-                        NormalizePath(directory),
-                        protectedUpdater,
-                        StringComparison.OrdinalIgnoreCase))
-                {
-                    TryDeleteDirectory(directory);
-                }
-            }
+            Process.Start(startInfo);
         }
         catch
         {
-            // Ошибка очистки не должна ломать успешное обновление.
+            // Ошибка запуска очистки не отменяет установленное обновление.
         }
     }
 
-    private static string? NormalizePath(string? path)
-    {
-        if (string.IsNullOrWhiteSpace(path))
-            return null;
-
-        return Path.GetFullPath(path)
-            .TrimEnd(Path.DirectorySeparatorChar);
-    }
 }
