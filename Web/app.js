@@ -9,7 +9,7 @@ for(const eventName of ['dragenter','dragover','drop']){
     if(types.includes('Files')){e.preventDefault();e.stopPropagation();}
   },true);
 }
-
+ 
 function send(action,extra={}){if(window.chrome?.webview)window.chrome.webview.postMessage({action,...extra});}
 let webSettings={useQuickAsi:true,nickname:'Player'};let webMods=[];let modFilter='all';let modSearch='';
 function twmOpenSettings(){goToSection('settings');}
