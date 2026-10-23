@@ -1,4 +1,4 @@
-
+﻿
 using Microsoft.Win32;
 using Microsoft.Web.WebView2.Core;
 using System;
@@ -26,6 +26,17 @@ namespace AMM.App
 {
     public partial class MainWindow : Window
     {
+        private static readonly System.Net.Http.HttpClient RecommendedCatalogHttpClient = new()
+        {
+            Timeout = TimeSpan.FromSeconds(20)
+        };
+        private const string RecommendedCatalogUrl =
+            "https://twm-catalog-worker.tridvarazt.workers.dev/catalog.json";
+        private static readonly System.Net.Http.HttpClient RecommendedBuildDownloadClient = new()
+        {
+            Timeout = Timeout.InfiniteTimeSpan
+        };
+
         private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
             if (e.ChangedButton != MouseButton.Left) return;
@@ -662,6 +673,22 @@ namespace AMM.App
                     case "getBuilds":
                         SendLocalBuilds();
                         break;
+                    case "getRecommendedBuilds":
+                        _ = SendRecommendedBuildsAsync();
+                        break;
+                    case "openRecommendedBuild":
+                        if (root.TryGetProperty("url", out var recommendedUrlElement))
+                            OpenRecommendedBuildUrl(recommendedUrlElement.GetString() ?? string.Empty);
+                        break;
+                    case "downloadRecommendedBuild":
+                        if (root.TryGetProperty("url", out var downloadUrlElement))
+                        {
+                            string downloadName = root.TryGetProperty("name", out var downloadNameElement)
+                                ? downloadNameElement.GetString() ?? "TWM-сборка" : "TWM-сборка";
+                            _ = DownloadAndImportRecommendedBuildAsync(
+                                downloadUrlElement.GetString() ?? string.Empty, downloadName);
+                        }
+                        break;
                     case "importBuild":
                         ImportLocalBuildFromWeb(folderImport: false);
                         break;
@@ -793,6 +820,240 @@ namespace AMM.App
         }
 
         /// <summary>Отправляет библиотеку локальных сборок в интерфейс WebView2.</summary>
+        private async Task SendRecommendedBuildsAsync()
+        {
+            try
+            {
+                using var response = await RecommendedCatalogHttpClient.GetAsync(RecommendedCatalogUrl);
+                response.EnsureSuccessStatusCode();
+                await using var stream = await response.Content.ReadAsStreamAsync();
+                using var document = await JsonDocument.ParseAsync(stream);
+                var root = document.RootElement;
+                if (!root.TryGetProperty("builds", out var buildsElement) ||
+                    buildsElement.ValueKind != JsonValueKind.Array)
+                    throw new InvalidDataException("Формат каталога сборок некорректен.");
+
+                var builds = new List<object>();
+                foreach (var item in buildsElement.EnumerateArray())
+                {
+                    if (item.ValueKind != JsonValueKind.Object) continue;
+                    string ReadString(string name)
+                    {
+                        return item.TryGetProperty(name, out var value) &&
+                               value.ValueKind == JsonValueKind.String
+                            ? value.GetString() ?? string.Empty
+                            : string.Empty;
+                    }
+
+                    string id = ReadString("id");
+                    string name = ReadString("name");
+                    string kind = ReadString("kind");
+                    string downloadUrl = ReadString("downloadUrl");
+                    if (string.IsNullOrWhiteSpace(id) ||
+                        string.IsNullOrWhiteSpace(name) ||
+                        (kind != "FullGame" && kind != "SaFix") ||
+                        !Uri.TryCreate(downloadUrl, UriKind.Absolute, out var parsedUrl) ||
+                        parsedUrl.Scheme != Uri.UriSchemeHttps)
+                        continue;
+
+                    string ReadHttpsImage(string propertyName)
+                    {
+                        var value = ReadString(propertyName);
+                        return Uri.TryCreate(value, UriKind.Absolute, out var imageUri) &&
+                               imageUri.Scheme == Uri.UriSchemeHttps
+                            ? imageUri.AbsoluteUri
+                            : string.Empty;
+                    }
+
+                    var screenshots = new List<string>();
+                    if (item.TryGetProperty("screenshots", out var screenshotsElement) &&
+                        screenshotsElement.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var screenshot in screenshotsElement.EnumerateArray())
+                        {
+                            if (screenshot.ValueKind != JsonValueKind.String) continue;
+                            var value = screenshot.GetString();
+                            if (Uri.TryCreate(value, UriKind.Absolute, out var imageUri) &&
+                                imageUri.Scheme == Uri.UriSchemeHttps && screenshots.Count < 12)
+                                screenshots.Add(imageUri.AbsoluteUri);
+                        }
+                    }
+
+                    builds.Add(new
+                    {
+                        id,
+                        name = name.Length > 120 ? name[..120] : name,
+                        kind,
+                        kindLabel = ReadString("kindLabel"),
+                        description = ReadString("description"),
+                        version = ReadString("version"),
+                        updatedAt = ReadString("updatedAt"),
+                        sizeLabel = ReadString("sizeLabel"),
+                        coverUrl = ReadHttpsImage("coverUrl"),
+                        screenshots,
+                        downloadUrl = parsedUrl.AbsoluteUri
+                    });
+                }
+
+                PostRecommendedBuilds(new { type = "recommendedBuilds", success = true, builds });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("Не удалось загрузить рекомендуемые сборки: " + ex);
+                PostRecommendedBuilds(new
+                {
+                    type = "recommendedBuilds",
+                    success = false,
+                    error = "Не удалось получить каталог. Проверь подключение к интернету и доступность репозитория.",
+                    builds = Array.Empty<object>()
+                });
+            }
+        }
+
+        private void PostRecommendedBuilds(object payload)
+        {
+            void Send()
+            {
+                try
+                {
+                    LauncherWebView.CoreWebView2?.PostWebMessageAsJson(
+                        JsonSerializer.Serialize(payload));
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine("Не удалось передать каталог в WebView2: " + ex.Message);
+                }
+            }
+
+            if (Dispatcher.CheckAccess()) Send();
+            else Dispatcher.BeginInvoke((Action)Send);
+        }
+
+        private async Task DownloadAndImportRecommendedBuildAsync(string url, string buildName)
+        {
+            if (_webImportCancellation != null)
+            {
+                SendBuildImportStatus("busy", "Другая загрузка или операция импорта уже выполняется…", 0);
+                return;
+            }
+
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
+                uri.Scheme != Uri.UriSchemeHttps ||
+                !(uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase) ||
+                  uri.Host.Equals("objects.githubusercontent.com", StringComparison.OrdinalIgnoreCase) ||
+                  uri.Host.Equals("release-assets.githubusercontent.com", StringComparison.OrdinalIgnoreCase)))
+            {
+                SendBuildImportStatus("error", "Ссылка на рекомендуемую сборку недействительна.", 0);
+                return;
+            }
+
+            var cancellation = new CancellationTokenSource();
+            _webImportCancellation = cancellation;
+            string? archivePath = null;
+            try
+            {
+                string downloadDirectory = Path.Combine(@"C:\TWM", "Downloads");
+                Directory.CreateDirectory(downloadDirectory);
+                string safeName = string.Concat((string.IsNullOrWhiteSpace(buildName) ? "TWM-сборка" : buildName)
+                    .Select(ch => Path.GetInvalidFileNameChars().Contains(ch) ? '_' : ch)).Trim().TrimEnd('.');
+                if (string.IsNullOrWhiteSpace(safeName)) safeName = "TWM-сборка";
+                if (safeName.Length > 80) safeName = safeName[..80];
+                string fileName = $"{safeName}-{DateTime.Now:yyyyMMdd-HHmmss}.zip";
+                archivePath = Path.Combine(downloadDirectory, fileName);
+
+                SendBuildImportStatus("busy", "Подключаемся к серверу загрузки…", 0);
+                using var response = await RecommendedBuildDownloadClient.GetAsync(
+                    uri, System.Net.Http.HttpCompletionOption.ResponseHeadersRead, cancellation.Token);
+                response.EnsureSuccessStatusCode();
+                await using (var sourceStream = await response.Content.ReadAsStreamAsync(cancellation.Token))
+                await using (var destinationStream = new FileStream(archivePath, FileMode.CreateNew,
+                    FileAccess.Write, FileShare.None, 128 * 1024, useAsync: true))
+                {
+                    long? totalBytes = response.Content.Headers.ContentLength;
+                    long downloadedBytes = 0;
+                    byte[] buffer = new byte[128 * 1024];
+                    int read;
+                    while ((read = await sourceStream.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellation.Token)) > 0)
+                    {
+                        await destinationStream.WriteAsync(buffer.AsMemory(0, read), cancellation.Token);
+                        downloadedBytes += read;
+                        int percent = totalBytes is > 0
+                            ? (int)Math.Clamp(downloadedBytes * 100d / totalBytes.Value, 0d, 100d)
+                            : 0;
+                        string progressText = totalBytes is > 0
+                            ? $"Скачиваем {safeName}: {FormatBuildSize(downloadedBytes)} из {FormatBuildSize(totalBytes.Value)}…"
+                            : $"Скачиваем {safeName}: {FormatBuildSize(downloadedBytes)}…";
+                        SendBuildImportStatus("busy", progressText, percent);
+                    }
+                }
+
+                var fileInfo = new FileInfo(archivePath);
+                if (!fileInfo.Exists || fileInfo.Length == 0)
+                    throw new InvalidDataException("Сервер вернул пустой архив.");
+
+                SendBuildImportStatus("busy", "Загрузка завершена. Импортируем сборку в библиотеку…", 100);
+                var importProgress = new Progress<LocalBuildImportProgress>(state =>
+                    SendBuildImportStatus("busy", state.Stage, Math.Clamp(state.Percent, 0, 100)));
+                LocalBuildInfo imported = await Task.Run(
+                    () => LocalBuildStore.ImportArchive(archivePath, importProgress, cancellation.Token),
+                    cancellation.Token);
+                SendLocalBuilds();
+                string installedMessage = $"Сборка «{imported.Name}» установлена и добавлена в «Мои сборки». Тип: {imported.KindLabel}. Файлов: {imported.FileCount:N0}.";
+                SendBuildImportStatus("success", installedMessage, 100);
+                PostRecommendedBuilds(new
+                {
+                    type = "recommendedBuildInstalled",
+                    name = imported.Name,
+                    message = installedMessage
+                });
+            }
+            catch (OperationCanceledException)
+            {
+                if (!string.IsNullOrWhiteSpace(archivePath))
+                {
+                    try { if (File.Exists(archivePath)) File.Delete(archivePath); } catch { }
+                }
+                SendBuildImportStatus("info", "Загрузка или импорт отменены.", 0);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("Ошибка скачивания рекомендуемой сборки: " + ex);
+                SendBuildImportStatus("error", "Не удалось скачать или импортировать рекомендуемую сборку.", 0);
+                SilverMessageBox.Show("Не удалось скачать или импортировать сборку.\n\n" + ex.Message,
+                    "TWM Launcher", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                if (ReferenceEquals(_webImportCancellation, cancellation))
+                    _webImportCancellation = null;
+                cancellation.Dispose();
+            }
+        }
+
+        private static void OpenRecommendedBuildUrl(string url)
+        {
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
+                uri.Scheme != Uri.UriSchemeHttps ||
+                !(uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase) ||
+                  uri.Host.Equals("objects.githubusercontent.com", StringComparison.OrdinalIgnoreCase) ||
+                  uri.Host.Equals("release-assets.githubusercontent.com", StringComparison.OrdinalIgnoreCase)))
+            {
+                SilverMessageBox.Show("Ссылка загрузки недействительна или не поддерживается.",
+                    "TWM Launcher", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            try
+            {
+                Process.Start(new ProcessStartInfo { FileName = uri.AbsoluteUri, UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                SilverMessageBox.Show("Не удалось открыть ссылку загрузки.\\n\\n" + ex.Message,
+                    "TWM Launcher", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
         private void SendLocalBuilds()
         {
             if (LauncherWebView.CoreWebView2 == null) return;

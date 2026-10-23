@@ -1,18 +1,25 @@
 {
   "schemaVersion": 1,
-  "items": [
+  "catalogVersion": 3,
+  "updatedAt": "2026-10-23T20:09:57Z",
+  "builds": [
     {
-      "id": "sample-build",
+      "id": "example-build",
       "name": "Название сборки",
-      "kind": "build",
-      "version": "1.0.0",
-      "description": "Описание рекомендуемой сборки",
-      "releaseTag": "build-sample-1.0.0",
-      "assetName": "sample-build.zip",
-      "sha256": "REPLACE_WITH_SHA256",
-      "sizeBytes": 0,
-      "imageUrl": "",
-      "published": false
+      "kind": "SaFix",
+      "kindLabel": "САМОФИКС",
+      "description": "Подробное описание сборки: особенности, состав, совместимость и важные примечания.",
+      "version": "1.0",
+      "downloadUrl": "https://github.com/OWNER/REPO/releases/download/TAG/build.zip",
+      "sizeLabel": "239 МБ",
+      "updatedAt": "2026-10-23",
+      "coverUrl": "https://example.com/images/build-cover.jpg",
+      "screenshots": [
+        "https://example.com/images/screenshot-1.jpg",
+        "https://example.com/images/screenshot-2.jpg",
+        "https://example.com/images/screenshot-3.jpg"
+      ],
+      "featured": true
     }
   ]
 }

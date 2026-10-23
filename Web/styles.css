@@ -437,3 +437,45 @@ body { height:100%; min-height:0; margin:0; overflow:hidden; }
 .launcher-check-button span{font-size:15px}
 @keyframes twmUpdateSpin{to{transform:rotate(360deg)}}
 @media(max-width:680px){.launcher-version-panel{align-items:flex-start;flex-wrap:wrap}.launcher-version-copy{min-width:calc(100% - 60px)}.launcher-check-button{margin-left:48px}}
+
+/* Recommended builds: cover, details and screenshot gallery */
+.recommended-build-card{padding:0;overflow:hidden;display:flex;flex-direction:column}
+.recommended-cover{position:relative;display:flex;align-items:center;justify-content:center;width:100%;height:190px;padding:0;border:0;border-bottom:1px solid #35303e;background:radial-gradient(ellipse at 50% 20%,#39264d,#14151c 72%);cursor:pointer;overflow:hidden}
+.recommended-cover img{width:100%;height:100%;object-fit:cover;transition:transform .25s,opacity .2s}
+.recommended-cover:hover img{transform:scale(1.035);opacity:.86}
+.recommended-cover-placeholder{display:flex;flex-direction:column;align-items:center;justify-content:center;color:#9b4be0;font-size:26px;font-weight:900;letter-spacing:4px;text-shadow:0 4px 22px #000}
+.recommended-cover-placeholder b{font-size:11px;color:#d2c4df;letter-spacing:5px;margin-top:5px}
+.cover-open{position:absolute;right:12px;bottom:12px;padding:7px 10px;border:1px solid #ffffff35;border-radius:6px;background:#101116d9;color:#fff;font-size:10px;opacity:0;transform:translateY(4px);transition:.18s}
+.recommended-cover:hover .cover-open,.recommended-cover:focus-visible .cover-open{opacity:1;transform:none}
+.recommended-card-content{padding:15px;display:flex;flex-direction:column;flex:1;min-width:0}
+.recommended-description{white-space:normal;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;min-height:39px;line-height:1.5}
+.recommended-gallery-link{align-self:flex-start;margin-top:10px;padding:0;border:0;background:none;color:#c49aeb;font:600 10px 'Segoe UI',sans-serif;cursor:pointer}
+.recommended-gallery-link:hover{color:#fff}
+.recommended-modal-backdrop{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:24px;background:#07070bd9;backdrop-filter:blur(8px)}
+.recommended-modal-backdrop[hidden],.recommended-image-viewer[hidden]{display:none}
+.recommended-details-modal{position:relative;width:min(900px,96vw);max-height:90vh;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#737B86 #111419;scrollbar-gutter:stable;border:1px solid #45404f;border-radius:14px;background:#121319;box-shadow:0 25px 90px #000b}
+.recommended-details-modal::-webkit-scrollbar{width:10px}.recommended-details-modal::-webkit-scrollbar-track{margin:10px 0;background:linear-gradient(180deg,#0A0B0D,#14171C 50%,#0A0B0D);border-left:1px solid #272C33;border-radius:999px}.recommended-details-modal::-webkit-scrollbar-thumb{min-height:48px;background:linear-gradient(180deg,#858D98,#505761);border:2px solid #111419;border-radius:999px;box-shadow:inset 0 0 0 1px #C2C8D022}.recommended-details-modal::-webkit-scrollbar-thumb:hover{background:linear-gradient(180deg,#B8BEC7,#737B86)}.recommended-details-modal::-webkit-scrollbar-thumb:active{background:linear-gradient(180deg,#D0D5DC,#858D98)}
+.recommended-modal-close{position:absolute;z-index:2;right:12px;top:12px;width:36px;height:36px;display:grid;place-items:center;padding:0;line-height:1;font-family:Arial,sans-serif;font-size:23px;font-weight:400;border:1px solid #ffffff45;border-radius:50%;background:#09090bc9;color:#fff;cursor:pointer;box-sizing:border-box}
+.recommended-details-cover{height:clamp(180px,34vh,340px);background:#1b1723;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.recommended-details-cover img{width:100%;height:100%;object-fit:cover}
+.recommended-details-body{padding:22px}
+.recommended-details-body h2{font-size:30px;margin:10px 0}
+.recommended-details-meta{color:#b7a7c8;font-size:13px;line-height:1.7}
+.recommended-details-description{white-space:pre-wrap;color:#d0ccd6;font-size:16px;line-height:1.8;margin:20px 0 26px}
+.recommended-details-body h3{font-size:17px;margin:0 0 14px}
+.recommended-details-gallery{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.recommended-shot{height:130px;padding:0;border:1px solid #3d3548;border-radius:8px;background:#201b28;overflow:hidden;cursor:zoom-in}
+.recommended-shot img{width:100%;height:100%;object-fit:cover;transition:transform .2s}
+.recommended-shot:hover img{transform:scale(1.04)}
+.recommended-no-shots{color:#95899e;font-size:12px}
+.recommended-details-download{margin-top:20px}
+.recommended-image-viewer{position:fixed;inset:0;z-index:1100;background:#050507f2;display:flex;align-items:center;justify-content:center;padding:55px 25px 25px}
+.recommended-image-viewer img{max-width:88vw;max-height:84vh;object-fit:contain;user-select:none}.recommended-image-viewer button{display:grid;place-items:center;padding:0;line-height:1;font-family:Arial,sans-serif;font-weight:400;border:1px solid #ffffff50;border-radius:50%;background:#181820;color:white;cursor:pointer;box-sizing:border-box}.recommended-viewer-close{position:absolute;right:22px;top:16px;width:40px;height:40px;font-size:25px}.recommended-viewer-nav{position:absolute;top:50%;transform:translateY(-50%);width:46px;height:58px;border-radius:12px!important;font-size:40px!important;background:#181820d9!important}.recommended-viewer-nav:hover{background:#34303f!important;border-color:#9c7ac0!important}.recommended-viewer-nav.previous{left:22px}.recommended-viewer-nav.next{right:22px}.recommended-viewer-counter{position:absolute;bottom:18px;left:50%;transform:translateX(-50%);padding:7px 12px;border:1px solid #ffffff25;border-radius:20px;background:#181820d9;color:#e5e1eb;font-size:12px;font-variant-numeric:tabular-nums}
+@media(max-width:700px){.recommended-cover{height:155px}.recommended-details-gallery{grid-template-columns:repeat(2,minmax(0,1fr))}.recommended-shot{height:100px}.recommended-details-body{padding:16px}.recommended-details-body h2{font-size:24px}.recommended-details-description{font-size:15px}.recommended-viewer-nav.previous{left:8px}.recommended-viewer-nav.next{right:8px}.recommended-viewer-nav{width:38px;height:48px}.recommended-image-viewer img{max-width:90vw;max-height:78vh}}
+
+
+/* Installed launcher version is shown only in Settings; keep update button styling unchanged. */
+.launcher-version-settings-card .launcher-version-panel{margin:0;width:100%;box-sizing:border-box;}
+.launcher-version-settings-card .launcher-version-copy small{font-size:10px;}
+.launcher-version-settings-card .launcher-version-copy strong{font-size:15px;line-height:1.45;}
+.launcher-version-settings-card .launcher-version-copy p{font-size:12px;line-height:1.5;}

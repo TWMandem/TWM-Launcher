@@ -1,0 +1,31 @@
+# Visual Studio / .NET
+.vs/
+**/bin/
+**/obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Local publishing/build output
+publish/
+artifacts/
+
+# Local app data, logs and databases
+*.log
+*.db
+*.db-shm
+*.db-wal
+
+# Local signing material and secrets
+*.pfx
+*.p12
+*.snk
+.env
+.env.*
+secrets.json
+
+.vs/
+**/bin/
+**/obj/
+*.csproj.user

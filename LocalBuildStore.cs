@@ -109,27 +109,55 @@ CREATE INDEX IF NOT EXISTS IX_LocalBuilds_ImportedAtUtc ON LocalBuilds(ImportedA
         using var command = connection.CreateCommand();
         command.CommandText = @"SELECT Id, Name, Kind, ContentPath, SourceArchive, ImportedAtUtc, FileCount, SizeBytes
                                 FROM LocalBuilds ORDER BY ImportedAtUtc DESC;";
-        using var reader = command.ExecuteReader();
-        while (reader.Read())
+        using (var reader = command.ExecuteReader())
         {
-            if (!Guid.TryParseExact(reader.GetString(0), "N", out _))
-                continue;
-
-            builds.Add(new LocalBuildInfo
+            while (reader.Read())
             {
-                Id = reader.GetString(0),
-                Name = reader.GetString(1),
-                Kind = Enum.TryParse(reader.GetString(2), ignoreCase: true, out LocalBuildKind parsedKind)
-                    ? parsedKind : LocalBuildKind.SaFix,
-                ContentPath = reader.GetString(3),
-                SourceArchive = reader.GetString(4),
-                ImportedAtUtc = DateTime.TryParse(reader.GetString(5), null,
-                    System.Globalization.DateTimeStyles.RoundtripKind, out var date) ? date : DateTime.MinValue,
-                FileCount = reader.GetInt64(6),
-                SizeBytes = reader.GetInt64(7)
-            });
+                if (!Guid.TryParseExact(reader.GetString(0), "N", out _))
+                    continue;
+
+                builds.Add(new LocalBuildInfo
+                {
+                    Id = reader.GetString(0),
+                    Name = reader.GetString(1),
+                    Kind = Enum.TryParse(reader.GetString(2), ignoreCase: true, out LocalBuildKind parsedKind)
+                        ? parsedKind : LocalBuildKind.SaFix,
+                    ContentPath = reader.GetString(3),
+                    SourceArchive = reader.GetString(4),
+                    ImportedAtUtc = DateTime.TryParse(reader.GetString(5), null,
+                        System.Globalization.DateTimeStyles.RoundtripKind, out var date) ? date : DateTime.MinValue,
+                    FileCount = reader.GetInt64(6),
+                    SizeBytes = reader.GetInt64(7)
+                });
+            }
         }
-        return builds;
+
+        // Не позволяем одной устаревшей записи (папка удалена или перемещена)
+        // сорвать загрузку всей библиотеки. Запись в БД сохраняем, ничего не удаляем.
+        return builds.Where(build =>
+        {
+            try
+            {
+                _ = GetContentDirectory(build);
+                return true;
+            }
+            catch (IOException)
+            {
+                return false;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return false;
+            }
+            catch (ArgumentException)
+            {
+                return false;
+            }
+            catch (InvalidOperationException)
+            {
+                return false;
+            }
+        }).ToList();
     }
 
     public static LocalBuildInfo ImportArchive(
