@@ -10,7 +10,7 @@ using System.Threading;
 using System.Windows.Controls.Primitives;
 
 namespace AMM.App;
-
+ 
 internal enum LocalBuildKind
 {
     FullGame,
