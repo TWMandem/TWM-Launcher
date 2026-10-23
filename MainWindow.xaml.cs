@@ -21,7 +21,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
-
+ 
 namespace AMM.App
 {
     public partial class MainWindow : Window
