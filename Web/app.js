@@ -21,7 +21,62 @@ function selectSettingsTab(name){document.querySelectorAll('[data-settings-tab]'
 function renderWebSettings(m){webSettings={...webSettings,...m};$('settingGameDirectory').value=m.gameDirectory||'';$('settingNickname').value=m.nickname||$('nickname').value||'Player';const target=m.targetProcess||'amazing.exe';const gtaMode=target==='gta_sa.exe';$('settingQuickAsi').checked=gtaMode&&!!m.useQuickAsi;$('settingQuickAsi').disabled=!gtaMode;$('targetAmazing').checked=!gtaMode;$('targetGta').checked=gtaMode;$('settingFoliage').checked=m.foliageEnabled===false;const modPane=document.querySelector('[data-settings-pane="mods"]');if(modPane){modPane.classList.toggle('mods-unavailable',!gtaMode);modPane.querySelectorAll('[data-action="importDll"],[data-action="refreshMods"],#modSearch,[data-mod-filter], [data-mod-toggle], [data-mod-delete]').forEach(el=>{el.disabled=!gtaMode;});let note=modPane.querySelector('#targetProcessModNotice');if(!note){note=document.createElement('div');note.id='targetProcessModNotice';note.className='settings-note';note.setAttribute('role','status');const card=modPane.querySelector('.settings-card');if(card)card.prepend(note);}if(note){note.textContent=gtaMode?'DLL / ASI и QuickASI доступны для gta_sa.exe.':'DLL / ASI и QuickASI отключены, потому что amazing.exe не поддерживает их инжекцию.';note.dataset.state=gtaMode?'success':'warning';}}const preview=$('f1Preview');const empty=$('f1PreviewEmpty');if(preview&&m.f1ImageData){preview.src=m.f1ImageData;preview.hidden=false;if(empty)empty.hidden=true;}else if(preview){preview.hidden=true;if(empty)empty.hidden=false;}$('settingDataDirectory').value=m.dataDirectory||'';const status=[];status.push(`<span class="${m.gameFolderExists?'ok':'bad'}">${m.gameFolderExists?'✓':'✕'} Папка игры ${m.gameFolderExists?'найдена':'не найдена'}</span>`);status.push(`<span class="${m.starterExists?'ok':'bad'}">${m.starterExists?'✓':'✕'} aggstarter.exe ${m.starterExists?'найден':'не найден'}</span>`);status.push(`<span class="${m.gameExeExists?'ok':'bad'}">${m.gameExeExists?'✓':'!'} gta_sa.exe ${m.gameExeExists?'найден':'не найден (нужен для QuickASI)'}</span>`);$('settingsPathStatus').innerHTML=status.join('');}
 function renderWebMods(m){const list=$('webModList');if(!list)return;if(!m.success){$('webModStatus').dataset.state='error';$('webModStatus').textContent=m.error||'Не удалось загрузить библиотеку модов.';list.innerHTML='';webMods=[];return;}webMods=Array.isArray(m.mods)?m.mods:[];drawWebMods();}
 function drawWebMods(){const list=$('webModList');if(!list)return;const dllAsiAllowed=(document.querySelector('input[name="targetProcess"]:checked')?.value||'amazing.exe')==='gta_sa.exe';const enabled=webMods.filter(x=>x.enabled).length;const disabled=webMods.length-enabled;const conflicts=webMods.filter(x=>x.conflict).length;const duplicates=webMods.filter(x=>x.duplicateOf).length;const status=$('webModStatus');status.dataset.state=conflicts?'warning':'';status.textContent=webMods.length?`Всего: ${webMods.length} · Включено: ${enabled} · Отключено: ${disabled}${conflicts?` · Конфликты: ${conflicts}`:''}${duplicates?` · Совпадающие файлы: ${duplicates}`:''}`:'Библиотека пока пуста. Добавь DLL или ASI кнопкой выше.';const filtered=webMods.filter(x=>(modFilter==='all'||(modFilter==='enabled'?!!x.enabled:!x.enabled))&&String(x.fileName||'').toLocaleLowerCase('ru').includes(modSearch));if(!filtered.length){list.innerHTML=`<div class="mod-empty">${webMods.length?'По заданным условиям моды не найдены.':'Здесь появятся DLL и ASI из папки asi и добавленные в библиотеку файлы.'}</div>`;return;}list.innerHTML=filtered.map(x=>{const hash=String(x.sha256||'');const state=x.enabled?'Включён':'Отключён';const warning=x.conflict?`<div class="mod-warning"><strong>Конфликт файла</strong><span>${escapeHtml(x.conflictReason||'Файл в папке игры отличается от сохранённой копии.')}</span></div>`:x.duplicateOf?`<div class="mod-note">Содержимое совпадает с <strong>${escapeHtml(x.duplicateOf)}</strong>.</div>`:'';return `<article class="web-mod-card ${x.conflict?'has-conflict':''}"><div class="web-mod-info"><div class="web-mod-title"><span class="mod-state-dot ${x.enabled?'on':'off'}"></span><b>${escapeHtml(x.fileName)}</b><span class="mod-state ${x.enabled?'on':'off'}">${state}</span>${x.conflict?'<span class="mod-conflict-tag">КОНФЛИКТ</span>':''}</div><small>${escapeHtml(x.source||'Библиотека TWM')}${hash?` · SHA-256: ${escapeHtml(hash.slice(0,12))}…`:''}</small>${warning}</div><div class="web-mod-actions"><button class="settings-button ${x.enabled?'danger':''}" data-mod-toggle="${escapeHtml(x.fileName)}" ${x.conflict?'title="Обнаружен изменённый файл — проверь его вручную"':''} ${dllAsiAllowed?'':'disabled title="Доступно только для gta_sa.exe"'}>${x.enabled?'Отключить':'Включить'}</button><button class="settings-button mod-delete-button" data-mod-delete="${escapeHtml(x.fileName)}" title="Удалить модификацию из библиотеки и папки игры" ${dllAsiAllowed?'':'disabled'}>Удалить</button></div></article>`;}).join('');}
-function renderServers(){const grid=$('serverGrid');if(!grid)return;grid.innerHTML=servers.map(([name,address,color],index)=>`<button class="server-card ${name===selected?'selected':''}" data-server="${name}" style="--server-color:${color};--card-index:${index}" aria-pressed="${name===selected?'true':'false'}"><div class="server-card-top"><span class="server-badge">${name}</span><span class="server-live">${name===selected?'ВЫБРАН':'ИГРОВОЙ МИР'}</span></div><div class="server-address">${address}</div><div class="server-card-bottom"><span>AMAZING ONLINE</span><i></i></div></button>`).join('');}
+let serverStatsByName = new Map();
+const serverNumberFormatter = new Intl.NumberFormat('ru-RU');
+function renderServers(){
+ const grid=$('serverGrid');if(!grid)return;
+ grid.innerHTML=servers.map(([name,address,color],index)=>`<button class="server-card ${name===selected?'selected':''}" data-server="${name}" style="--server-color:${color};--card-index:${index}" aria-pressed="${name===selected?'true':'false'}">
+   <div class="server-card-top"><span class="server-badge">${name}</span><span class="server-live">${name===selected?'ВЫБРАН':'ИГРОВОЙ МИР'}</span></div>
+   <div class="server-address">${address}</div>
+   <div class="server-stats-main">
+     <div class="server-online-group"><span class="server-online-value" data-online>—</span><span class="server-online-label">ИГРОКОВ ОНЛАЙН</span></div>
+     <div class="server-max-group"><span class="server-max-value" data-max>из —</span><span class="server-capacity-caption">ЛИМИТ СЕРВЕРА</span></div>
+   </div>
+   <div class="server-capacity-track" aria-hidden="true"><span data-capacity-fill></span></div>
+   <div class="server-card-bottom"><span class="server-card-caption">AMAZING ONLINE</span><span class="server-queue" data-queue hidden></span></div>
+ </button>`).join('');
+ updateServerStatsCards();
+}
+function updateServerStatsCards(){
+ document.querySelectorAll('#serverGrid .server-card').forEach(card=>{
+   const name=(card.dataset.server||'').toUpperCase();
+   const stat=serverStatsByName.get(name);
+   const onlineElement=card.querySelector('[data-online]');
+   const maxElement=card.querySelector('[data-max]');
+   const fill=card.querySelector('[data-capacity-fill]');
+   const queueElement=card.querySelector('[data-queue]');
+   if(!stat){
+     if(onlineElement)onlineElement.textContent='—';
+     if(maxElement)maxElement.textContent='из —';
+     if(fill)fill.style.width='0%';
+     if(queueElement){queueElement.hidden=true;queueElement.textContent='';}
+     card.title='Статистика загружается';
+     return;
+   }
+   const online=Math.max(0,Number(stat.online)||0);
+   const maximum=Math.max(0,Number(stat.maxOnline)||0);
+   const queue=Math.max(0,Number(stat.queue)||0);
+   if(onlineElement)onlineElement.textContent=serverNumberFormatter.format(online);
+   if(maxElement)maxElement.textContent=maximum?`из ${serverNumberFormatter.format(maximum)}`:'из —';
+   if(fill)fill.style.width=(maximum?Math.min(100,online/maximum*100):0)+'%';
+   if(queueElement){queueElement.hidden=queue<=0;queueElement.textContent=queue>0?`Очередь ${serverNumberFormatter.format(queue)}`:'';}
+   card.title=`${stat.status||'Статус неизвестен'}${stat.updatedAt?` · обновлено ${stat.updatedAt}`:''}`;
+   card.dataset.statsState='ready';
+ });
+}
+window.chrome?.webview?.addEventListener('message',event=>{
+ const message=event.data||{};
+ if(message.type!=='serverStats')return;
+ if(message.success&&Array.isArray(message.servers)){
+   const next=new Map();
+   for(const server of message.servers){
+     if(!server||typeof server.name!=='string')continue;
+     next.set(server.name.toUpperCase(),{...server,updatedAt:message.updatedAt||''});
+   }
+   if(next.size)serverStatsByName=next;
+   updateServerStatsCards();
+ }
+});
 function updateServerSelection(){document.querySelectorAll('#serverGrid [data-server]').forEach(b=>{const active=b.dataset.server===selected;b.classList.toggle('selected',active);b.setAttribute('aria-pressed',active?'true':'false');const label=b.querySelector('.server-live');if(label)label.textContent=active?'ВЫБРАН':'ИГРОВОЙ МИР';});}
 function syncSelected(){const s=servers.find(x=>x[0]===selected)||servers[12];selected=s[0];$('heroServer').textContent=selected;$('selectedServer').textContent=selected;$('heroAddress').textContent=s[1];$('selectedAddress').textContent=s[1];$('serverDot').style.background=s[2];updateServerSelection();}
 let activeSavedNickname='';function renderSavedNicknames(names,active){const container=$('savedNicknames');if(!container)return;const list=Array.isArray(names)?names:[];activeSavedNickname=list.includes(active)?active:'';container.innerHTML=list.length?list.map(n=>`<button type="button" class="nickname-card ${n===activeSavedNickname?'selected':''}" role="option" aria-selected="${n===activeSavedNickname?'true':'false'}" data-saved-nickname="${escapeHtml(n)}"><span class="nickname-card-icon">♙</span><span class="nickname-card-name">${escapeHtml(n)}</span><span class="nickname-card-state">${n===activeSavedNickname?'ВЫБРАН':'ВЫБРАТЬ'}</span></button>`).join(''):'<div class="nickname-cards-empty">Пока нет сохранённых никнеймов для этого сервера</div>';container.setAttribute('aria-label',`Сохранённые никнеймы: ${list.length}`);$('deleteNicknameButton').disabled=!activeSavedNickname;}

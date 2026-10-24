@@ -359,6 +359,8 @@ namespace AMM.App
 
         private string _selectedServer = "NIGHT";
         private readonly string? _updateConfirmationPath;
+        private readonly AmazingServerStatsService _serverStatsService = new();
+        private CancellationTokenSource? _serverStatsCancellation;
 
         public MainWindow(string? updateConfirmationPath = null)
         {
@@ -390,6 +392,9 @@ namespace AMM.App
             Closed += (_, _) =>
             {
                 _gameStatusTimer.Stop();
+                _serverStatsCancellation?.Cancel();
+                _serverStatsCancellation?.Dispose();
+                _serverStatsCancellation = null;
                 PersistNicknameOnClose();
             };
             RefreshGameStatus();
@@ -528,9 +533,78 @@ namespace AMM.App
             bool webViewReady = await InitializeWebViewAsync();
 
             if (webViewReady)
+            {
                 WriteUpdateConfirmation();
+                _serverStatsCancellation = new CancellationTokenSource();
+                _ = PollServerStatsAsync(_serverStatsCancellation.Token);
+            }
 
             await CheckForLauncherUpdatesAsync();
+        }
+
+        private async Task PollServerStatsAsync(CancellationToken cancellationToken)
+        {
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+            do
+            {
+                try
+                {
+                    ServerStatsFetchResult result = await _serverStatsService.FetchAsync(cancellationToken);
+                    SendServerStatsToWeb(result);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch
+                {
+                    SendServerStatsToWeb(ServerStatsFetchResult.Failure(
+                        "Статистика серверов сейчас недоступна. Повторим попытку через 30 секунд."));
+                }
+
+                try
+                {
+                    if (!await timer.WaitForNextTickAsync(cancellationToken))
+                        break;
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    break;
+                }
+            }
+            while (!cancellationToken.IsCancellationRequested);
+        }
+
+        private void SendServerStatsToWeb(ServerStatsFetchResult result)
+        {
+            try
+            {
+                if (LauncherWebView.CoreWebView2 is null)
+                    return;
+
+                var payload = new
+                {
+                    type = "serverStats",
+                    success = result.Success,
+                    updatedAt = result.UpdatedAt?.ToString("HH:mm:ss") ?? string.Empty,
+                    servers = result.Servers.Select(server => new
+                    {
+                        name = server.Name,
+                        ip = server.Ip,
+                        port = server.Port,
+                        online = server.Online,
+                        maxOnline = server.MaxOnline,
+                        queue = server.Queue,
+                        status = server.Status
+                    }).ToArray()
+                };
+
+                LauncherWebView.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(payload));
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("Не удалось передать статистику серверов в интерфейс: " + ex.Message);
+            }
         }
 
         private async Task<bool> InitializeWebViewAsync()
