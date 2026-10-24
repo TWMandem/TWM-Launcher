@@ -10,7 +10,7 @@ using System.Threading;
 using System.Windows.Controls.Primitives;
 
 namespace AMM.App;
- 
+
 internal enum LocalBuildKind
 {
     FullGame,
@@ -163,7 +163,8 @@ CREATE INDEX IF NOT EXISTS IX_LocalBuilds_ImportedAtUtc ON LocalBuilds(ImportedA
     public static LocalBuildInfo ImportArchive(
         string archivePath,
         IProgress<LocalBuildImportProgress>? progress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? displayName = null)
     {
         progress?.Report(new LocalBuildImportProgress { Percent = 0, Stage = "Подготовка импорта…" });
         cancellationToken.ThrowIfCancellationRequested();
@@ -379,7 +380,9 @@ CREATE INDEX IF NOT EXISTS IX_LocalBuilds_ImportedAtUtc ON LocalBuilds(ImportedA
 
             string relativeContent = Path.GetRelativePath(buildDirectory, contentDirectory);
             if (relativeContent == ".") relativeContent = "";
-            string name = Path.GetFileNameWithoutExtension(archivePath).Trim();
+            string name = string.IsNullOrWhiteSpace(displayName)
+                ? Path.GetFileNameWithoutExtension(archivePath).Trim()
+                : displayName.Trim();
             if (string.IsNullOrWhiteSpace(name)) name = kind switch
             {
                 LocalBuildKind.FullGame => "Игровая сборка",

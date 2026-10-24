@@ -21,7 +21,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
- 
+
 namespace AMM.App
 {
     public partial class MainWindow : Window
@@ -995,7 +995,7 @@ namespace AMM.App
                 var importProgress = new Progress<LocalBuildImportProgress>(state =>
                     SendBuildImportStatus("busy", state.Stage, Math.Clamp(state.Percent, 0, 100)));
                 LocalBuildInfo imported = await Task.Run(
-                    () => LocalBuildStore.ImportArchive(archivePath, importProgress, cancellation.Token),
+                    () => LocalBuildStore.ImportArchive(archivePath, importProgress, cancellation.Token, buildName),
                     cancellation.Token);
                 SendLocalBuilds();
                 string installedMessage = $"Сборка «{imported.Name}» установлена и добавлена в «Мои сборки». Тип: {imported.KindLabel}. Файлов: {imported.FileCount:N0}.";
